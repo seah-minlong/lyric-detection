@@ -164,7 +164,7 @@ def evaluate_transcription(song_path: str, ground_truth_path: str,
     
     # Transcribe the song
     print("\n🔄 Running transcription...")
-    predicted_lyrics = transcribe_song(song_path, whisper_model, output_dir)
+    predicted_lyrics = transcribe_song(song_path, whisper_model)
     
     if predicted_lyrics is None:
         print("❌ Transcription failed!")
