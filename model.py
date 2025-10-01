@@ -3,119 +3,110 @@ import subprocess
 import torch
 from transformers import pipeline
 
+DEMUCS_OUTPUT_FOLDER = "htdemucs"
 
-def separate_vocals(input_song_path, output_dir="output_demucs"):
-    """
-    Separate vocals from a song using Demucs.
+def extract_vocals_from_song(song_file, output_folder="output_demucs"):
+    """Separates vocals from background music using Demucs"""
     
-    Args:
-        input_song_path (str): Path to the input song file
-        output_dir (str): Directory to save the separated vocals
-        
-    Returns:
-        str: Path to the separated vocal track
-        
-    Raises:
-        subprocess.CalledProcessError: If Demucs separation fails
-        FileNotFoundError: If the vocal track is not found after separation
-    """
-    os.makedirs(output_dir, exist_ok=True)
+    if not os.path.exists(song_file):
+        raise FileNotFoundError(f"Song file not found: {song_file}")
     
-    print(f"Separating vocals from: {input_song_path}")
-    try:
-        subprocess.run([
-            "python", "-m", "demucs", "--two-stems", "vocals",
-            "-o", output_dir, input_song_path
-        ], check=True)
-        print("Demucs separation complete.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error during Demucs separation: {e}")
-        raise
+    # create output directory if it doesn't exist
+    os.makedirs(output_folder, exist_ok=True)
     
-    # Find the path to the generated vocal track
-    song_name_without_ext = os.path.splitext(os.path.basename(input_song_path))[0]
-    vocal_track_path = os.path.join(output_dir, "htdemucs", song_name_without_ext, "vocals.wav")
+    print(f"Processing: {os.path.basename(song_file)}")
     
-    if not os.path.exists(vocal_track_path):
-        error_msg = f"Could not find the vocal track at the expected path: {vocal_track_path}"
-        print(f"❌ Error: {error_msg}")
-        print(f"Please check the '{output_dir}' folder to see what was generated.")
-        raise FileNotFoundError(error_msg)
+    # run demucs vocal separation
+    cmd = ["python", "-m", "demucs", "--two-stems", "vocals", "-o", output_folder, song_file]
+    result = subprocess.run(cmd, capture_output=True, text=True)
     
-    print(f"🎤 Vocal track found at: {vocal_track_path}")
-    return vocal_track_path
+    if result.returncode != 0:
+        print("Demucs failed with error:", result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, cmd)
+    
+    # figure out where demucs saved the vocal track
+    song_basename = os.path.splitext(os.path.basename(song_file))[0]
+    vocals_path = os.path.join(output_folder, DEMUCS_OUTPUT_FOLDER, song_basename, "vocals.wav")
+    
+    # sanity check that the file actually exists
+    if not os.path.exists(vocals_path):
+        print(f"Warning: Expected vocals at {vocals_path} but file doesn't exist")
+        # check what's actually in the output directory
+        base_dir = os.path.join(output_folder, DEMUCS_OUTPUT_FOLDER, song_basename)
+        if os.path.exists(base_dir):
+            files = os.listdir(base_dir)
+            print(f"Found files: {files}")
+        raise FileNotFoundError(f"Vocals file missing: {vocals_path}")
+    
+    print(f"Vocals extracted to: {vocals_path}")
+    return vocals_path
 
 
-def transcribe_audio(audio_path, model_name="openai/whisper-base", return_timestamps=True):
-    """
-    Transcribe audio using Whisper model.
+def get_lyrics_from_audio(audio_file, model="openai/whisper-base"):
+    """Convert audio to text using Whisper"""
     
-    Args:
-        audio_path (str): Path to the audio file to transcribe
-        model_name (str): Whisper model to use (default: "openai/whisper-base")
-        return_timestamps (bool): Whether to return timestamps in the transcription
-        
-    Returns:
-        dict: Transcription result containing text and optionally timestamps
-    """
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    print(f"\nUsing device for Whisper: {device}")
+    # check if we can use GPU - whisper is much faster with CUDA
+    use_gpu = torch.cuda.is_available()
+    device = "cuda:0" if use_gpu else "cpu"
     
-    print(f"Loading the Whisper model: {model_name}...")
-    asr_pipeline = pipeline(
+    if use_gpu:
+        print("Using GPU acceleration")
+    else:
+        print("Using CPU (this might be slow)")
+    
+    # load whisper model
+    print(f"Loading {model}...")
+    transcriber = pipeline(
         "automatic-speech-recognition",
-        model=model_name,
+        model=model,
         device=device
     )
-    print("Model loaded successfully!")
     
-    print("\nTranscribing the audio... (This may take a while depending on audio length)")
-    transcription_result = asr_pipeline(audio_path, return_timestamps=return_timestamps, generate_kwargs={"language": "en"})
+    # transcribe the vocals
+    print("Converting speech to text...")
+    result = transcriber(
+        audio_file, 
+        return_timestamps=True,
+        generate_kwargs={"language": "en"}
+    )
     
-    return transcription_result
+    return result
 
 
-def transcribe_song(input_song_path, whisper_model="openai/whisper-base", output_dir="output_demucs"):
-    """
-    Complete pipeline: separate vocals from song and transcribe them.
+def transcribe_song(song_path, model="openai/whisper-base"):
+    """Extract lyrics from a song file"""
     
-    Args:
-        input_song_path (str): Path to the input song file
-        whisper_model (str): Whisper model to use for transcription
-        output_dir (str): Directory to save the separated vocals
-        
-    Returns:
-        str: Transcribed lyrics
-    """
     try:
-        # Step 1: Separate vocals
-        vocal_track_path = separate_vocals(input_song_path, output_dir)
+        print(f"\n=== Processing: {os.path.basename(song_path)} ===")
         
-        # Step 2: Transcribe vocals
-        transcription_result = transcribe_audio(vocal_track_path, whisper_model)
+        # first, separate the vocals from the music
+        vocals_file = extract_vocals_from_song(song_path)
         
-        lyrics = transcription_result["text"]
+        # then convert the vocals to text  
+        transcription = get_lyrics_from_audio(vocals_file, model)
+        detected_lyrics = transcription["text"]
         
-        print("\n--- 📜 DETECTED LYRICS ---")
-        print(lyrics)
+        print("\n=== LYRICS ===")
+        print(detected_lyrics)
+        print("=" * 50)
         
-        return lyrics
+        return detected_lyrics
         
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"Error in transcription pipeline: {e}")
+    except Exception as e:
+        print(f"Something went wrong: {e}")
         return None
 
 
 def main():
-    song_path = "songs/eminem_the-real-slim-shady.mp3"  
+    # test with a sample song
+    test_song = "songs/eminem_the-real-slim-shady.mp3"
     
-    # Run the transcription pipeline
-    lyrics = transcribe_song(song_path)
+    lyrics = transcribe_song(test_song)
     
     if lyrics:
-        print("\n✅ Transcription completed successfully!")
+        print("\nDone!")
     else:
-        print("\n❌ Transcription failed!")
+        print("\nFailed to extract lyrics")
 
 
 if __name__ == "__main__":
