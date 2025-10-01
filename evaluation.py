@@ -229,11 +229,6 @@ def print_evaluation_results(results: Dict):
     print(f"  • Deletions: {metrics['deletions']}")
     print()
     
-    print("📜 TRANSCRIBED LYRICS:")
-    print("-" * 40)
-    print(results['predicted_lyrics'])
-    print("-" * 40)
-    
     # Show detailed diff if there are differences
     if metrics['similarity_ratio'] < 1.0:
         print("\n🔍 DETAILED DIFFERENCES:")
@@ -251,8 +246,8 @@ def main():
     """
     Main function to run evaluation with example files.
     """
-    song_path = "data/songs/slimshady.mp3"  # Update this path
-    ground_truth_path = "data/lyrics/slimshady.txt"  # Create this file with correct lyrics
+    song_path = "data/songs/slimshady.mp3" 
+    ground_truth_path = "data/lyrics/slimshady.txt"
     model = "whisper-lyrics-final"
 
     # Check if files exist

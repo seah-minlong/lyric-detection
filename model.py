@@ -14,7 +14,7 @@ def extract_vocals_from_song(song_file, output_folder="output_demucs"):
     # create output directory if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
     
-    print(f"Processing: {os.path.basename(song_file)}")
+    print(f"Running Demucs to separate vocals from {song_file}...")
     
     # run demucs vocal separation
     cmd = ["python", "-m", "demucs", "--two-stems", "vocals", "-o", output_folder, song_file]
