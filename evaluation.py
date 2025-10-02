@@ -141,26 +141,149 @@ def print_evaluation_results(results: Dict):
     print("=" * 60)
 
 
-def main():
-    song_path = "data/songs/slimshady.mp3" 
-    ground_truth_path = "data/lyrics/slimshady.txt"
-    # model = "whisper-lyrics-final"
+def compare_models_on_test_data():
+    """
+    Compare baseline Whisper model with fine-tuned model on test data.
+    """
+    test_songs_dir = "test_data/songs"
+    test_lyrics_dir = "test_data/lyrics"
+    
+    baseline_model = "openai/whisper-base"
+    finetuned_model = "whisper-lyrics-final"
+    
+    # Map song files to lyric files
+    test_files = {
+        "fernando.mp3": "fernando.txt",
+        "gimme-a-man-after-midnight.mp3": "gimme-a-man-after-midnight.txt",
+        "mamma-mia.mp3": "mama-mia.txt",
+        "slipping-through-my-fingers.mp3": "slipping-through-my-fingers.txt"
+    }
+    
+    results_baseline = []
+    results_finetuned = []
+    
+    print("\n" + "=" * 80)
+    print("MODEL COMPARISON: BASELINE vs FINE-TUNED")
+    print("=" * 80)
+    
+    for song_file, lyric_file in test_files.items():
+        song_path = os.path.join(test_songs_dir, song_file)
+        lyrics_path = os.path.join(test_lyrics_dir, lyric_file)
+        
+        if not os.path.exists(song_path):
+            print(f"Warning: Song file not found: {song_path}")
+            continue
+        
+        if not os.path.exists(lyrics_path):
+            print(f"Warning: Lyrics file not found: {lyrics_path}")
+            continue
+        
+        print(f"\n{'=' * 80}")
+        print(f"Processing: {song_file}")
+        print(f"{'=' * 80}")
+        
+        # Evaluate with baseline model
+        print(f"\nEvaluating with BASELINE model ({baseline_model})...")
+        baseline_result = evaluate_transcription(
+            song_path=song_path,
+            ground_truth_path=lyrics_path,
+            whisper_model=baseline_model
+        )
+        if baseline_result:
+            results_baseline.append(baseline_result)
+            print(f"Baseline WER: {baseline_result['metrics']['word_error_rate']*100:.2f}%")
+        
+        # Evaluate with fine-tuned model
+        print(f"\nEvaluating with FINE-TUNED model ({finetuned_model})...")
+        finetuned_result = evaluate_transcription(
+            song_path=song_path,
+            ground_truth_path=lyrics_path,
+            whisper_model=finetuned_model
+        )
+        if finetuned_result:
+            results_finetuned.append(finetuned_result)
+            print(f"Fine-tuned WER: {finetuned_result['metrics']['word_error_rate']*100:.2f}%")
+        
+        # Show comparison for this song
+        if baseline_result and finetuned_result:
+            wer_diff = baseline_result['metrics']['word_error_rate'] - finetuned_result['metrics']['word_error_rate']
+            improvement = wer_diff * 100
+            print(f"\n{'*' * 40}")
+            print(f"WER Improvement: {improvement:+.2f}%")
+            if improvement > 0:
+                print("✓ Fine-tuned model performs BETTER")
+            elif improvement < 0:
+                print("✗ Baseline model performs BETTER")
+            else:
+                print("= Same performance")
+            print(f"{'*' * 40}")
+    
+    # Print summary comparison
+    print_comparison_summary(results_baseline, results_finetuned)
+    
+    return results_baseline, results_finetuned
 
-    if not os.path.exists(song_path):
-        print(f"Error: Song file not found: {song_path}")
+
+def print_comparison_summary(results_baseline: List[Dict], results_finetuned: List[Dict]):
+    """
+    Print a summary table comparing baseline and fine-tuned models.
+    """
+    print("\n" + "=" * 80)
+    print("SUMMARY: MODEL COMPARISON")
+    print("=" * 80)
+    
+    if not results_baseline or not results_finetuned:
+        print("Insufficient results for comparison")
         return
     
-    if not os.path.exists(ground_truth_path):
-        print(f"Error: Ground truth file not found: {ground_truth_path}")
-        return
+    print(f"\n{'Song':<35} {'Baseline WER':<15} {'Fine-tuned WER':<15} {'Improvement':<12}")
+    print("-" * 80)
     
-    results = evaluate_transcription(
-        song_path=song_path,
-        ground_truth_path=ground_truth_path,
-        # whisper_model=model
-    )
+    total_baseline_wer = 0
+    total_finetuned_wer = 0
     
-    print_evaluation_results(results)
+    for baseline_res, finetuned_res in zip(results_baseline, results_finetuned):
+        song_name = os.path.basename(baseline_res['song_path'])
+        baseline_wer = baseline_res['metrics']['word_error_rate'] * 100
+        finetuned_wer = finetuned_res['metrics']['word_error_rate'] * 100
+        improvement = baseline_wer - finetuned_wer
+        
+        total_baseline_wer += baseline_wer
+        total_finetuned_wer += finetuned_wer
+        
+        print(f"{song_name:<35} {baseline_wer:>6.2f}%{'':<8} {finetuned_wer:>6.2f}%{'':<8} {improvement:>+6.2f}%")
+    
+    print("-" * 80)
+    
+    avg_baseline_wer = total_baseline_wer / len(results_baseline)
+    avg_finetuned_wer = total_finetuned_wer / len(results_finetuned)
+    avg_improvement = avg_baseline_wer - avg_finetuned_wer
+    
+    print(f"{'AVERAGE':<35} {avg_baseline_wer:>6.2f}%{'':<8} {avg_finetuned_wer:>6.2f}%{'':<8} {avg_improvement:>+6.2f}%")
+    print("=" * 80)
+    
+    print(f"\nOverall Performance:")
+    print(f"  Baseline Model Average WER: {avg_baseline_wer:.2f}%")
+    print(f"  Fine-tuned Model Average WER: {avg_finetuned_wer:.2f}%")
+    print(f"  Average Improvement: {avg_improvement:+.2f}%")
+    
+    if avg_improvement > 0:
+        relative_improvement = (avg_improvement / avg_baseline_wer) * 100
+        print(f"  Relative Improvement: {relative_improvement:.2f}%")
+        print(f"\n✓ Fine-tuned model shows overall improvement!")
+    elif avg_improvement < 0:
+        print(f"\n✗ Baseline model performs better on average")
+    else:
+        print(f"\n= Models show similar performance")
+    
+    print("=" * 80)
+
+
+def main():
+    """
+    Main function to run model comparison on test data.
+    """
+    compare_models_on_test_data()
 
 
 if __name__ == "__main__":
