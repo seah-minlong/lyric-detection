@@ -14,6 +14,14 @@ def extract_vocals_from_song(song_file, output_folder="output_demucs"):
     # create output directory if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
     
+    # check if vocals already exist
+    song_basename = os.path.splitext(os.path.basename(song_file))[0]
+    vocals_path = os.path.join(output_folder, DEMUCS_OUTPUT_FOLDER, song_basename, "vocals.wav")
+    
+    if os.path.exists(vocals_path):
+        print(f"Vocals already separated: {vocals_path}")
+        return vocals_path
+    
     print(f"Running Demucs to separate vocals from {song_file}...")
     
     # run demucs vocal separation
